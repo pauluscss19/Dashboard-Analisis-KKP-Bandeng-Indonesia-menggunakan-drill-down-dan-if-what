@@ -17,6 +17,15 @@ $queryDashboard = "
 
 $resultDashboard = $conn->query($queryDashboard);
 
+// Simpan data untuk chart
+$chartData = [];
+while($row = $resultDashboard->fetch_assoc()) {
+    $chartData[] = $row;
+}
+
+// Reset pointer untuk tabel
+$resultDashboard->data_seek(0);
+
 // Query untuk total nasional
 $queryTotal = "
     SELECT 
@@ -35,6 +44,7 @@ $dataTotal = $resultTotal->fetch_assoc();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Produksi Bandeng KKP</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -195,6 +205,54 @@ $dataTotal = $resultTotal->fetch_assoc();
             font-size: 0.9em;
         }
         
+        /* Chart Section */
+        .chart-section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+        
+        .chart-section h3 {
+            color: #2c3e50;
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #3498db;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-box {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .chart-box h4 {
+            color: #2c3e50;
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .chart-info {
+            background: #e3f2fd;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #1976d2;
+            text-align: center;
+        }
+        
         /* Search Box */
         .search-box {
             margin-bottom: 25px;
@@ -317,6 +375,12 @@ $dataTotal = $resultTotal->fetch_assoc();
         }
         
         /* Responsive */
+        @media (max-width: 1400px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
         @media (max-width: 1024px) {
             .sidebar {
                 width: 220px;
@@ -398,6 +462,29 @@ $dataTotal = $resultTotal->fetch_assoc();
                 </div>
             </div>
             
+            <!-- Chart Section -->
+            <div class="chart-section">
+                <h3>Visualisasi Data Produksi per Provinsi (Klik untuk Drill Down)</h3>
+                
+                <div class="charts-grid">
+                    <div class="chart-box">
+                        <h4>Rata-rata Volume Produksi per Provinsi (Ton)</h4>
+                        <canvas id="chartVolume"></canvas>
+                        <div class="chart-info">
+                            Klik pada bar untuk melihat detail drill down provinsi
+                        </div>
+                    </div>
+                    
+                    <div class="chart-box">
+                        <h4>Rata-rata Nilai Produksi per Provinsi (Juta Rp)</h4>
+                        <canvas id="chartNilai"></canvas>
+                        <div class="chart-info">
+                            Klik pada bar untuk melihat detail drill down provinsi
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <h3 style="margin-bottom: 20px; color: #2c3e50; font-size: 1.3em;">Rata-rata Produksi per Provinsi (2019-2023)</h3>
             
             <div class="search-box">
@@ -454,6 +541,188 @@ $dataTotal = $resultTotal->fetch_assoc();
     </div>
     
     <script>
+        // Data dari PHP
+        const chartData = <?php echo json_encode($chartData); ?>;
+        
+        // Ambil top 10 provinsi untuk chart
+        const top10Data = chartData.slice(0, 10);
+        
+        const provinsiLabels = top10Data.map(d => d.Provinsi);
+        const volumeData = top10Data.map(d => parseFloat(d.Rata_Volume));
+        const nilaiData = top10Data.map(d => parseFloat(d.Rata_Nilai));
+        
+        // Fungsi untuk redirect ke drill down
+        function redirectToDrillDown(provinsi) {
+            window.location.href = 'drill_down.php?provinsi=' + encodeURIComponent(provinsi);
+        }
+        
+        // Chart Volume
+        const ctxVolume = document.getElementById('chartVolume').getContext('2d');
+        const chartVolume = new Chart(ctxVolume, {
+            type: 'bar',
+            data: {
+                labels: provinsiLabels,
+                datasets: [{
+                    label: 'Rata-rata Volume (Ton)',
+                    data: volumeData,
+                    backgroundColor: 'rgba(52, 152, 219, 0.7)',
+                    borderColor: 'rgba(52, 152, 219, 1)',
+                    borderWidth: 2,
+                    hoverBackgroundColor: 'rgba(52, 152, 219, 0.9)',
+                    hoverBorderColor: 'rgba(41, 128, 185, 1)',
+                    hoverBorderWidth: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                onClick: (event, activeElements) => {
+                    if (activeElements.length > 0) {
+                        const index = activeElements[0].index;
+                        const provinsi = provinsiLabels[index];
+                        redirectToDrillDown(provinsi);
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                label += new Intl.NumberFormat('id-ID', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                }).format(context.parsed.y);
+                                label += ' Ton';
+                                return label;
+                            },
+                            footer: function() {
+                                return 'Klik untuk drill down';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45,
+                            font: {
+                                size: 10
+                            }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return new Intl.NumberFormat('id-ID').format(value);
+                            }
+                        }
+                    }
+                },
+                onHover: (event, activeElements) => {
+                    event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
+                }
+            }
+        });
+        
+        // Chart Nilai
+        const ctxNilai = document.getElementById('chartNilai').getContext('2d');
+        const chartNilai = new Chart(ctxNilai, {
+            type: 'bar',
+            data: {
+                labels: provinsiLabels,
+                datasets: [{
+                    label: 'Rata-rata Nilai (Juta Rp)',
+                    data: nilaiData,
+                    backgroundColor: 'rgba(39, 174, 96, 0.7)',
+                    borderColor: 'rgba(39, 174, 96, 1)',
+                    borderWidth: 2,
+                    hoverBackgroundColor: 'rgba(39, 174, 96, 0.9)',
+                    hoverBorderColor: 'rgba(34, 153, 84, 1)',
+                    hoverBorderWidth: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                onClick: (event, activeElements) => {
+                    if (activeElements.length > 0) {
+                        const index = activeElements[0].index;
+                        const provinsi = provinsiLabels[index];
+                        redirectToDrillDown(provinsi);
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                label += new Intl.NumberFormat('id-ID', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2
+                                }).format(context.parsed.y);
+                                label += ' Juta Rp';
+                                return label;
+                            },
+                            footer: function() {
+                                return 'Klik untuk drill down';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45,
+                            font: {
+                                size: 10
+                            }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return new Intl.NumberFormat('id-ID').format(value);
+                            }
+                        }
+                    }
+                },
+                onHover: (event, activeElements) => {
+                    event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';
+                }
+            }
+        });
+        
+        // Filter table function
         function filterTable() {
             const input = document.getElementById('searchInput');
             const filter = input.value.toUpperCase();
